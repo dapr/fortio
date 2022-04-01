@@ -161,6 +161,7 @@ var (
 	// GODEBUG="http2debug=2" GRPC_GO_LOG_VERBOSITY_LEVEL=99 GRPC_GO_LOG_SEVERITY_LEVEL=info fortio grpcping -loglevel debug ...
 	doHealthFlag   = flag.Bool("health", false, "grpc ping client mode: use health instead of ping")
 	doPingLoadFlag = flag.Bool("ping", false, "grpc load test: use ping instead of health")
+	doDaprLoadFlag = flag.Bool("dapr", false, "grpc load test: use Dapr API")
 	healthSvcFlag  = flag.String("healthservice", "", "which service string to pass to health check")
 	pingDelayFlag  = flag.Duration("grpc-ping-delay", 0, "grpc ping delay in response")
 	streamsFlag    = flag.Int("s", 1, "Number of streams per grpc connection")
@@ -426,6 +427,7 @@ func fortioLoad(justCurl bool, percList []float64) {
 			Payload:            httpOpts.PayloadString(),
 			Delay:              *pingDelayFlag,
 			UsePing:            *doPingLoadFlag,
+			UseDapr:            *doDaprLoadFlag,
 		}
 		o.TLSOptions = httpOpts.TLSOptions
 		res, err = fgrpc.RunGRPCTest(&o)

@@ -76,6 +76,8 @@ type GRPCRunnerResults struct {
 	Destination string
 	Streams     int
 	Ping        bool
+	Dapr        bool
+	daprResults DaprGRPCRunnerResults
 }
 
 // Run exercises GRPC health check or ping at the target QPS.
@@ -118,6 +120,7 @@ type GRPCRunnerOptions struct {
 	CertOverride       string        // Override the cert virtual host of authority for testing
 	AllowInitialErrors bool          // whether initial errors don't cause an abort
 	UsePing            bool          // use our own Ping proto for grpc load instead of standard health check one.
+	UseDapr            bool          // use Dapr API for grpc load.
 }
 
 // RunGRPCTest runs an http test and returns the aggregated stats.
@@ -130,7 +133,12 @@ func RunGRPCTest(o *GRPCRunnerOptions) (*GRPCRunnerResults, error) {
 		// sort of todo, this redoing some of periodic normalize (but we can't use normalize which does too much)
 		o.NumThreads = periodic.DefaultRunnerOptions.NumThreads
 	}
-	if o.UsePing {
+	if o.UseDapr {
+		o.RunType = "GRPC Dapr"
+		if o.Delay > 0 {
+			o.RunType += fmt.Sprintf(" Delay=%v", o.Delay)
+		}
+	} else if o.UsePing {
 		o.RunType = "GRPC Ping"
 		if o.Delay > 0 {
 			o.RunType += fmt.Sprintf(" Delay=%v", o.Delay)
@@ -171,7 +179,16 @@ func RunGRPCTest(o *GRPCRunnerOptions) (*GRPCRunnerResults, error) {
 		}
 		grpcstate[i].Ping = o.UsePing
 		var err error
-		if o.UsePing { // nolint: nestif
+		if o.UseDapr { // nolint: nestif
+			grpcstate[i].daprResults = DaprGRPCRunnerResults{}
+			if grpcstate[i].daprResults.NewClient(conn) != nil {
+				return nil, fmt.Errorf("unable to create dapr client %d for %s", i, o.Destination)
+			}
+			grpcstate[i].daprResults.PrepareRequest(o)
+			if o.Exactly <= 0 {
+				err = grpcstate[i].daprResults.RunTest()
+			}
+		} else if o.UsePing { // nolint: nestif
 			grpcstate[i].clientP = NewPingServerClient(conn)
 			if grpcstate[i].clientP == nil {
 				return nil, fmt.Errorf("unable to create ping client %d for %s", i, o.Destination)
