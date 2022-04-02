@@ -10,4 +10,5 @@ require (
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	google.golang.org/grpc v1.44.0
 	google.golang.org/protobuf v1.27.1
+	github.com/dapr/dapr v1.6.0
 )
