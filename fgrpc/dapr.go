@@ -26,6 +26,7 @@ type DaprRequestParameters struct {
 	capability string
 	target     string
 	method     string
+	appId      string
 
 	extensions map[string]string
 }
@@ -61,7 +62,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4InvokeDapr(o *GRPCRunnerOptions) 
 	}
 
 	d.daprInvokeRequest = &dapr.InvokeServiceRequest{
-		Id: o.Service,
+		Id: d.params.appId,
 		Message: &v1.InvokeRequest{
 			Method:      method,
 			ContentType: "text/plain",
@@ -124,6 +125,8 @@ func (d *DaprGRPCRunnerResults) parseDaprParameters(params string) error {
 			d.params.target = v
 		case "method":
 			d.params.method = v
+		case "appid":
+			d.params.appId = v
 		default:
 			d.params.extensions[k] = v
 		}
