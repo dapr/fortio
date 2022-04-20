@@ -3,6 +3,7 @@ module fortio.org/fortio
 go 1.16
 
 require (
+	github.com/dapr/dapr v1.7.0
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0
@@ -10,5 +11,4 @@ require (
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	google.golang.org/grpc v1.44.0
 	google.golang.org/protobuf v1.27.1
-	github.com/dapr/dapr v1.6.0
 )
