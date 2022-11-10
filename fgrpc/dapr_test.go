@@ -143,3 +143,88 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 		assert.Nil(t, d.publishEventRequest)
 	})
 }
+
+func TestPrepareRequest4BulkPubSub(t *testing.T) {
+	t.Run("params sanity test", func(t *testing.T) {
+		testcases := []struct {
+			name    string
+			params  string
+			isError bool
+		}{
+			{
+				name:    "method is missing",
+				params:  "capability=bulkpubsub,target=dapr,store=memstore,topic=mytopic,numevents=100",
+				isError: true,
+			},
+			{
+				name:    "store is missing",
+				params:  "capability=bulkpubsub,target=dapr,method=bulkpublish,topic=mytopic,numevents=100",
+				isError: true,
+			},
+			{
+				name:    "topic is missing",
+				params:  "capability=bulkpubsub,target=dapr,method=bulkpublish,store=memstore,numevents=100",
+				isError: true,
+			},
+			{
+				name:    "numevents is missing",
+				params:  "capability=bulkpubsub,target=dapr,method=bulkpublish,store=memstore,topic=mytopic",
+				isError: true,
+			},
+			{
+				name:    "numevents is invalid",
+				params:  "capability=bulkpubsub,target=dapr,method=bulkpublish,store=memstore,topic=mytopic,numevents=invalid",
+				isError: true,
+			},
+			{
+				name:    "method is invalid",
+				params:  "capability=bulkpubsub,target=dapr,method=invalid,store=memstore,topic=mytopic,numevents=100",
+				isError: true,
+			},
+			{
+				name:    "valid with method bulkpublish",
+				params:  "capability=bulkpubsub,target=dapr,method=bulkpublish,store=memstore,topic=mytopic,numevents=100",
+				isError: false,
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				o := &GRPCRunnerOptions{}
+				o.UseDapr = tc.params
+
+				d := &DaprGRPCRunnerResults{}
+				err := d.parseDaprParameters(o.UseDapr)
+				assert.NoError(t, err, "parse failed")
+
+				err = d.prepareRequest4BulkPubSub(o)
+				if tc.isError {
+					assert.Error(t, err, "should fail")
+				} else {
+					assert.NoError(t, err, "should succeed")
+				}
+			})
+		}
+	})
+
+	t.Run("bulk publish request", func(t *testing.T) {
+		o := &GRPCRunnerOptions{}
+		o.UseDapr = "capability=bulkpubsub,target=dapr,method=bulkpublish,store=memstore,topic=mytopic,contenttype=text/plain,numevents=100"
+		o.Payload = "hello world"
+
+		d := &DaprGRPCRunnerResults{}
+		err := d.parseDaprParameters(o.UseDapr)
+		assert.NoError(t, err, "parse failed")
+
+		err = d.prepareRequest4BulkPubSub(o)
+		assert.NoError(t, err, "prepare failed")
+
+		assert.Equal(t, "memstore", d.bulkPublishRequest.PubsubName)
+		assert.Equal(t, "mytopic", d.bulkPublishRequest.Topic)
+		for _, entry := range d.bulkPublishRequest.Entries {
+			assert.Equal(t, "text/plain", entry.ContentType)
+			assert.Equal(t, "hello world", string(entry.Event))
+			assert.NotEmpty(t, entry.EntryId)
+		}
+	})
+}
