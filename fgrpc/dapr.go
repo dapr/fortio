@@ -266,7 +266,7 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 		return nil
 	}
 
-	err := fmt.Errorf("unsupported dapr load test: capability=%s, target=%s", c, t)
+	err := fmt.Errorf("unsupported dapr load test: capability=%s, target=%s, method=%s", c, t, m)
 
 	if c == CAPABILITY_INVOKE {
 		if t == TARGET_DAPR {
@@ -283,6 +283,7 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 			if m == "publish" {
 				_, err = d.daprClient.PublishEvent(context.Background(), d.publishEventRequest)
 			} else if m == "bulkpublish" {
+				err = nil
 				for _, req := range d.publishEventRequests {
 					_, ierr := d.daprClient.PublishEvent(context.Background(), req)
 					if ierr != nil {
