@@ -15,7 +15,6 @@ import (
 const CAPABILITY_INVOKE = "invoke"
 const CAPABILITY_STATE = "state"
 const CAPABILITY_PUBSUB = "pubsub"
-const CAPABILITY_BULK_PUBSUB = "bulkpubsub"
 const TARGET_NOOP = "noop"
 const TARGET_DAPR = "dapr"
 const TARGET_APPCALLBACK = "appcallback"
@@ -36,9 +35,7 @@ type DaprGRPCRunnerResults struct {
 	// pub-sub
 	publishEventRequest  *dapr.PublishEventRequest
 	publishEventRequests []*dapr.PublishEventRequest
-
-	// bulk pub-sub
-	bulkPublishRequest *dapr.BulkPublishRequest
+	bulkPublishRequest   *dapr.BulkPublishRequest
 }
 
 type DaprRequestParameters struct {
@@ -72,8 +69,6 @@ func (d *DaprGRPCRunnerResults) PrepareRequestAndConnection(o *GRPCRunnerOptions
 			err = d.prepareRequest4State(o)
 		} else if c == CAPABILITY_PUBSUB {
 			err = d.prepareRequest4PubSub(o)
-		} else if c == CAPABILITY_BULK_PUBSUB {
-			err = d.prepareRequest4BulkPubSub(o)
 		}
 	} else if t == TARGET_APPCALLBACK {
 		d.appCallbackClient = dapr.NewAppCallbackClient(conn)
@@ -139,6 +134,9 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	store := d.params.store
 	topic := d.params.extensions["topic"]
 	contentType := d.params.extensions["contenttype"]
+	numEvents := d.params.extensions["numevents"]
+	numEventsInt := 0
+
 	if method == "" {
 		return fmt.Errorf("method is required for pubsub load test")
 	}
@@ -147,6 +145,17 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	}
 	if topic == "" {
 		return fmt.Errorf("topic is required for pubsub load test")
+	}
+	if method != "publish" {
+		if numEvents == "" {
+			return fmt.Errorf("numevents is required for pubsub load test when method is %s", method)
+		}
+
+		var err error
+		numEventsInt, err = strconv.Atoi(numEvents)
+		if err != nil {
+			return fmt.Errorf("numevents must be integer: count=%s", numEvents)
+		}
 	}
 
 	switch method {
@@ -161,16 +170,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 		} else {
 			d.publishEventRequest.Data = []byte{}
 		}
-	case "bulkpublish":
-		numEvents := d.params.extensions["numevents"]
-		if numEvents == "" {
-			return fmt.Errorf("numevents is required for pubsub load test when method is bulkpublish")
-		}
-		numEventsInt, err := strconv.Atoi(numEvents)
-		if err != nil {
-			return fmt.Errorf("numevents must be integer: count=%s", numEvents)
-		}
-
+	case "publish-multi":
 		d.publishEventRequests = make([]*dapr.PublishEventRequest, numEventsInt)
 		for i := 0; i < numEventsInt; i++ {
 			d.publishEventRequests[i] = &dapr.PublishEventRequest{
@@ -184,37 +184,6 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 				d.publishEventRequests[i].Data = []byte{}
 			}
 		}
-	default:
-		return fmt.Errorf("unsupported method of pubsub load test: method=%s", method)
-	}
-
-	return nil
-}
-
-func (d *DaprGRPCRunnerResults) prepareRequest4BulkPubSub(o *GRPCRunnerOptions) error {
-	method := d.params.method
-	store := d.params.store
-	topic := d.params.extensions["topic"]
-	contentType := d.params.extensions["contenttype"]
-	numEvents := d.params.extensions["numevents"]
-	if method == "" {
-		return fmt.Errorf("method is required for bulk pubsub load test")
-	}
-	if store == "" {
-		return fmt.Errorf("store(pubsub name) is required for bulk pubsub load test")
-	}
-	if topic == "" {
-		return fmt.Errorf("topic is required for bulk pubsub load test")
-	}
-	if numEvents == "" {
-		return fmt.Errorf("numevents is required for bulk pubsub load test")
-	}
-	numEventsInt, err := strconv.Atoi(numEvents)
-	if err != nil {
-		return fmt.Errorf("numevents must be integer: count=%s", numEvents)
-	}
-
-	switch method {
 	case "bulkpublish":
 		d.bulkPublishRequest = &dapr.BulkPublishRequest{
 			PubsubName: store,
@@ -233,7 +202,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4BulkPubSub(o *GRPCRunnerOptions) 
 			}
 		}
 	default:
-		return fmt.Errorf("unsupported method of bulk pubsub load test: method=%s", method)
+		return fmt.Errorf("unsupported method of pubsub load test: method=%s", method)
 	}
 
 	return nil
@@ -280,9 +249,10 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 		}
 	} else if c == CAPABILITY_PUBSUB {
 		if t == TARGET_DAPR {
-			if m == "publish" {
+			switch m {
+			case "publish":
 				_, err = d.daprClient.PublishEvent(context.Background(), d.publishEventRequest)
-			} else if m == "bulkpublish" {
+			case "publish-multi":
 				err = nil
 				for _, req := range d.publishEventRequests {
 					_, ierr := d.daprClient.PublishEvent(context.Background(), req)
@@ -290,11 +260,9 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 						err = ierr
 					}
 				}
+			case "bulkpublish":
+				_, err = d.daprClient.BulkPublishEventAlpha1(context.Background(), d.bulkPublishRequest)
 			}
-		}
-	} else if c == CAPABILITY_BULK_PUBSUB {
-		if t == TARGET_DAPR {
-			_, err = d.daprClient.BulkPublishEventAlpha1(context.Background(), d.bulkPublishRequest)
 		}
 	}
 
