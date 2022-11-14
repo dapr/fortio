@@ -306,8 +306,20 @@ func stringToMap(s string) map[string]string {
 	kvs := strings.Split(s, ",")
 	for _, kv := range kvs {
 		kv := strings.Split(kv, "=")
+		if len(kv) != 2 {
+			// ignore invalid key-value pair
+			continue
+		}
 		k := strings.TrimSpace(kv[0])
+		if k == "" {
+			// ignore empty key
+			continue
+		}
 		v := strings.TrimSpace(kv[1])
+		if v == "" {
+			// ignore empty value
+			continue
+		}
 		m[k] = v
 	}
 	return m
