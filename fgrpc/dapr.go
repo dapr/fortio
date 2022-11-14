@@ -134,6 +134,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	store := d.params.store
 	topic := d.params.extensions["topic"]
 	contentType := d.params.extensions["contenttype"]
+	metadata := stringToMap(d.params.extensions["metadata"])
 	numEvents := d.params.extensions["numevents"]
 	numEventsInt := 0
 
@@ -164,6 +165,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 			PubsubName:      store,
 			Topic:           topic,
 			DataContentType: contentType,
+			Metadata:        metadata,
 		}
 		if len(o.Payload) > 0 {
 			d.publishEventRequest.Data = []byte(o.Payload)
@@ -177,6 +179,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 				PubsubName:      store,
 				Topic:           topic,
 				DataContentType: contentType,
+				Metadata:        metadata,
 			}
 			if len(o.Payload) > 0 {
 				d.publishEventRequests[i].Data = []byte(o.Payload)
@@ -194,6 +197,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 			d.bulkPublishRequest.Entries[i] = &dapr.BulkPublishRequestEntry{
 				EntryId:     strconv.Itoa(i),
 				ContentType: contentType,
+				Metadata:    metadata,
 			}
 			if len(o.Payload) > 0 {
 				d.bulkPublishRequest.Entries[i].Event = []byte(o.Payload)
@@ -294,4 +298,17 @@ func (d *DaprGRPCRunnerResults) parseDaprParameters(params string) error {
 	}
 
 	return nil
+}
+
+// stringToMap converts a string of the form "key1=value1,key2=value2" to a map.
+func stringToMap(s string) map[string]string {
+	m := make(map[string]string)
+	kvs := strings.Split(s, ",")
+	for _, kv := range kvs {
+		kv := strings.Split(kv, "=")
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+		m[k] = v
+	}
+	return m
 }
