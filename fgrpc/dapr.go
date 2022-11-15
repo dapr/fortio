@@ -208,7 +208,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 				d.bulkPublishRequest.Entries[i].Event = []byte{}
 			}
 			if rawPayload != "" {
-				d.publishEventRequest.Metadata = map[string]string{"rawPayload": rawPayload}
+				d.bulkPublishRequest.Entries[i].Metadata = map[string]string{"rawPayload": rawPayload}
 			}
 		}
 	default:
