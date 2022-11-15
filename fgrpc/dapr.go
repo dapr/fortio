@@ -134,7 +134,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	store := d.params.store
 	topic := d.params.extensions["topic"]
 	contentType := d.params.extensions["contenttype"]
-	metadata := stringToMap(d.params.extensions["metadata"])
+	rawPayload := d.params.extensions["rawpayload"]
 	numEvents := d.params.extensions["numevents"]
 	numEventsInt := 0
 
@@ -165,12 +165,14 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 			PubsubName:      store,
 			Topic:           topic,
 			DataContentType: contentType,
-			Metadata:        metadata,
 		}
 		if len(o.Payload) > 0 {
 			d.publishEventRequest.Data = []byte(o.Payload)
 		} else {
 			d.publishEventRequest.Data = []byte{}
+		}
+		if rawPayload != "" {
+			d.publishEventRequest.Metadata = map[string]string{"rawPayload": rawPayload}
 		}
 	case "publish-multi":
 		d.publishEventRequests = make([]*dapr.PublishEventRequest, numEventsInt)
@@ -179,12 +181,14 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 				PubsubName:      store,
 				Topic:           topic,
 				DataContentType: contentType,
-				Metadata:        metadata,
 			}
 			if len(o.Payload) > 0 {
 				d.publishEventRequests[i].Data = []byte(o.Payload)
 			} else {
 				d.publishEventRequests[i].Data = []byte{}
+			}
+			if rawPayload != "" {
+				d.publishEventRequest.Metadata = map[string]string{"rawPayload": rawPayload}
 			}
 		}
 	case "bulkpublish":
@@ -197,12 +201,14 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 			d.bulkPublishRequest.Entries[i] = &dapr.BulkPublishRequestEntry{
 				EntryId:     strconv.Itoa(i),
 				ContentType: contentType,
-				Metadata:    metadata,
 			}
 			if len(o.Payload) > 0 {
 				d.bulkPublishRequest.Entries[i].Event = []byte(o.Payload)
 			} else {
 				d.bulkPublishRequest.Entries[i].Event = []byte{}
+			}
+			if rawPayload != "" {
+				d.publishEventRequest.Metadata = map[string]string{"rawPayload": rawPayload}
 			}
 		}
 	default:
@@ -298,29 +304,4 @@ func (d *DaprGRPCRunnerResults) parseDaprParameters(params string) error {
 	}
 
 	return nil
-}
-
-// stringToMap converts a string of the form "key1=value1,key2=value2" to a map.
-func stringToMap(s string) map[string]string {
-	m := make(map[string]string)
-	kvs := strings.Split(s, ",")
-	for _, kv := range kvs {
-		kv := strings.Split(kv, "=")
-		if len(kv) != 2 {
-			// ignore invalid key-value pair
-			continue
-		}
-		k := strings.TrimSpace(kv[0])
-		if k == "" {
-			// ignore empty key
-			continue
-		}
-		v := strings.TrimSpace(kv[1])
-		if v == "" {
-			// ignore empty value
-			continue
-		}
-		m[k] = v
-	}
-	return m
 }
