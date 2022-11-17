@@ -33,7 +33,6 @@ type DaprGRPCRunnerResults struct {
 	getStateRequest *dapr.GetStateRequest
 
 	// pub-sub
-	publishEventRequest  *dapr.PublishEventRequest
 	publishEventRequests []*dapr.PublishEventRequest
 	bulkPublishRequest   *dapr.BulkPublishRequest
 }
@@ -147,34 +146,19 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	if topic == "" {
 		return fmt.Errorf("topic is required for pubsub load test")
 	}
-	if method != "publish" {
-		if numEvents == "" {
-			return fmt.Errorf("numevents is required for pubsub load test when method is %s", method)
-		}
 
+	if numEvents == "" {
+		numEventsInt = 1
+	} else {
 		var err error
 		numEventsInt, err = strconv.Atoi(numEvents)
 		if err != nil {
-			return fmt.Errorf("numevents must be integer: count=%s", numEvents)
+			return fmt.Errorf("numevents must be integer: found=%s", numEvents)
 		}
 	}
 
 	switch method {
 	case "publish":
-		d.publishEventRequest = &dapr.PublishEventRequest{
-			PubsubName:      store,
-			Topic:           topic,
-			DataContentType: contentType,
-		}
-		if len(o.Payload) > 0 {
-			d.publishEventRequest.Data = []byte(o.Payload)
-		} else {
-			d.publishEventRequest.Data = []byte{}
-		}
-		if rawPayload != "" {
-			d.publishEventRequest.Metadata = map[string]string{"rawPayload": rawPayload}
-		}
-	case "publish-multi":
 		d.publishEventRequests = make([]*dapr.PublishEventRequest, numEventsInt)
 		for i := 0; i < numEventsInt; i++ {
 			d.publishEventRequests[i] = &dapr.PublishEventRequest{
@@ -261,8 +245,6 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 		if t == TARGET_DAPR {
 			switch m {
 			case "publish":
-				_, err = d.daprClient.PublishEvent(context.Background(), d.publishEventRequest)
-			case "publish-multi":
 				err = nil
 				for _, req := range d.publishEventRequests {
 					_, ierr := d.daprClient.PublishEvent(context.Background(), req)

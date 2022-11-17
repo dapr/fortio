@@ -1,6 +1,7 @@
 package fgrpc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -65,22 +66,10 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 				errSub:  "unsupported method",
 			},
 			{
-				name:    "when method is publish-multi, numevents is missing",
-				params:  "capability=pubsub,target=dapr,method=publish-multi,store=memstore,topic=mytopic",
-				isError: true,
-				errSub:  "numevents is required",
-			},
-			{
-				name:    "when method is publish-multi, numevents is invalid",
-				params:  "capability=pubsub,target=dapr,method=publish-multi,store=memstore,topic=mytopic,numevents=invalid",
+				name:    "numevents is invalid",
+				params:  "capability=pubsub,target=dapr,method=publish,store=memstore,topic=mytopic,numevents=invalid",
 				isError: true,
 				errSub:  "numevents must be integer",
-			},
-			{
-				name:    "when method is bulkpublish, numevents is missing",
-				params:  "capability=pubsub,target=dapr,method=bulkpublish,store=memstore,topic=mytopic",
-				isError: true,
-				errSub:  "numevents is required",
 			},
 			{
 				name:    "when method is bulkpublish, numevents is invalid",
@@ -91,11 +80,6 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 			{
 				name:    "valid with method publish",
 				params:  "capability=pubsub,target=dapr,method=publish,store=memstore,topic=mytopic",
-				isError: false,
-			},
-			{
-				name:    "valid with method publish-multi",
-				params:  "capability=pubsub,target=dapr,method=publish-multi,store=memstore,topic=mytopic,numevents=100",
 				isError: false,
 			},
 			{
@@ -125,46 +109,56 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 	})
 
 	t.Run("publish request", func(t *testing.T) {
-		o := &GRPCRunnerOptions{}
-		o.UseDapr = "capability=pubsub,target=dapr,method=publish,store=memstore,topic=mytopic,contenttype=text/plain"
-		o.Payload = "hello world"
-
-		d := &DaprGRPCRunnerResults{}
-		err := d.parseDaprParameters(o.UseDapr)
-		assert.NoError(t, err, "parse failed")
-
-		err = d.prepareRequest4PubSub(o)
-		assert.NoError(t, err, "prepare failed")
-
-		assert.Equal(t, "memstore", d.publishEventRequest.PubsubName)
-		assert.Equal(t, "mytopic", d.publishEventRequest.Topic)
-		assert.Equal(t, "text/plain", d.publishEventRequest.DataContentType)
-		assert.Equal(t, "hello world", string(d.publishEventRequest.Data))
-
-		assert.Len(t, d.publishEventRequests, 0)
-	})
-
-	t.Run("publish multi request", func(t *testing.T) {
-		o := &GRPCRunnerOptions{}
-		o.UseDapr = "capability=pubsub,target=dapr,method=publish-multi,store=memstore,topic=mytopic,contenttype=text/plain,numevents=100"
-		o.Payload = "hello world"
-
-		d := &DaprGRPCRunnerResults{}
-		err := d.parseDaprParameters(o.UseDapr)
-		assert.NoError(t, err, "parse failed")
-
-		err = d.prepareRequest4PubSub(o)
-		assert.NoError(t, err, "prepare failed")
-
-		assert.Len(t, d.publishEventRequests, 100)
-		for _, req := range d.publishEventRequests {
-			assert.Equal(t, "memstore", req.PubsubName)
-			assert.Equal(t, "mytopic", req.Topic)
-			assert.Equal(t, "text/plain", req.DataContentType)
-			assert.Equal(t, "hello world", string(req.Data))
+		testcases := []struct {
+			name      string
+			numEvents int
+		}{
+			{
+				name:      "numevents is missing",
+				numEvents: -1,
+			},
+			{
+				name:      "numevents is 1",
+				numEvents: 1,
+			},
+			{
+				name:      "numevents is 100",
+				numEvents: 100,
+			},
 		}
 
-		assert.Nil(t, d.publishEventRequest)
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				o := &GRPCRunnerOptions{}
+				o.UseDapr = "capability=pubsub,target=dapr,method=publish,store=memstore,topic=mytopic,contenttype=text/plain"
+				if tc.numEvents > 0 {
+					o.UseDapr += fmt.Sprintf(",numevents=%d", tc.numEvents)
+				}
+				o.Payload = "hello world"
+
+				d := &DaprGRPCRunnerResults{}
+				err := d.parseDaprParameters(o.UseDapr)
+				assert.NoError(t, err, "parse failed")
+
+				err = d.prepareRequest4PubSub(o)
+				assert.NoError(t, err, "prepare failed")
+
+				if tc.numEvents > 0 {
+					assert.Equal(t, tc.numEvents, len(d.publishEventRequests))
+				} else {
+					assert.Equal(t, 1, len(d.publishEventRequests))
+				}
+
+				for _, req := range d.publishEventRequests {
+					assert.Equal(t, "memstore", req.PubsubName)
+					assert.Equal(t, "mytopic", req.Topic)
+					assert.Equal(t, "text/plain", req.DataContentType)
+					assert.Equal(t, "hello world", string(req.Data))
+				}
+
+				assert.Nil(t, d.bulkPublishRequest)
+			})
+		}
 	})
 
 	t.Run("bulk publish request", func(t *testing.T) {
@@ -186,5 +180,7 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 			assert.Equal(t, "hello world", string(entry.Event))
 			assert.NotEmpty(t, entry.EntryId)
 		}
+
+		assert.Nil(t, d.publishEventRequests)
 	})
 }
