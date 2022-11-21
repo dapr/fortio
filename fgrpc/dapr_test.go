@@ -101,6 +101,7 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 				err = d.prepareRequest4PubSub(o)
 				if tc.isError {
 					assert.Error(t, err, "should fail")
+					assert.Contains(t, err.Error(), tc.errSub)
 				} else {
 					assert.NoError(t, err, "should succeed")
 				}
@@ -182,5 +183,128 @@ func TestPrepareRequest4PubSub(t *testing.T) {
 		}
 
 		assert.Nil(t, d.publishEventRequests)
+	})
+}
+
+func TestPrepareRequest4PubSubAppCallback(t *testing.T) {
+	t.Run("params sanity test", func(t *testing.T) {
+		testcases := []struct {
+			name    string
+			params  string
+			isError bool
+			errSub  string
+		}{
+			{
+				name:    "method is missing",
+				params:  "capability=pubsub,target=appcallback,store=memstore,topic=mytopic",
+				isError: true,
+				errSub:  "method is required",
+			},
+			{
+				name:    "store is missing",
+				params:  "capability=pubsub,target=appcallback,method=subscribe,topic=mytopic",
+				isError: true,
+				errSub:  "store(pubsub name) is required",
+			},
+			{
+				name:    "topic is missing",
+				params:  "capability=pubsub,target=appcallback,method=subscribe,store=memstore",
+				isError: true,
+				errSub:  "topic is required",
+			},
+			{
+				name:    "method is invalid",
+				params:  "capability=pubsub,target=appcallback,method=invalid,store=memstore,topic=mytopic",
+				isError: true,
+				errSub:  "unsupported method",
+			},
+			{
+				name:    "numevents is invalid",
+				params:  "capability=pubsub,target=appcallback,method=subscribe,store=memstore,topic=mytopic,numevents=invalid",
+				isError: true,
+				errSub:  "numevents must be integer",
+			},
+			{
+				name:    "valid with method subscribe",
+				params:  "capability=pubsub,target=appcallback,method=subscribe,store=memstore,topic=mytopic",
+				isError: false,
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				o := &GRPCRunnerOptions{}
+				o.UseDapr = tc.params
+
+				d := &DaprGRPCRunnerResults{}
+				err := d.parseDaprParameters(o.UseDapr)
+				assert.NoError(t, err, "parse failed")
+
+				err = d.prepareRequest4PubSubAppCallback(o)
+				if tc.isError {
+					assert.Error(t, err, "should fail")
+					assert.Contains(t, err.Error(), tc.errSub)
+				} else {
+					assert.NoError(t, err, "should succeed")
+				}
+			})
+		}
+	})
+
+	t.Run("subscribe request", func(t *testing.T) {
+		testcases := []struct {
+			name      string
+			numEvents int
+		}{
+			{
+				name:      "numevents is missing",
+				numEvents: -1,
+			},
+			{
+				name:      "numevents is 1",
+				numEvents: 1,
+			},
+			{
+				name:      "numevents is 100",
+				numEvents: 100,
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				o := &GRPCRunnerOptions{}
+				o.UseDapr = "capability=pubsub,target=appcallback,method=subscribe,store=memstore,topic=mytopic,contenttype=text/plain"
+				if tc.numEvents > 0 {
+					o.UseDapr += fmt.Sprintf(",numevents=%d", tc.numEvents)
+				}
+				o.Payload = "hello world"
+
+				d := &DaprGRPCRunnerResults{}
+				err := d.parseDaprParameters(o.UseDapr)
+				assert.NoError(t, err, "parse failed")
+
+				err = d.prepareRequest4PubSubAppCallback(o)
+				assert.NoError(t, err, "prepare failed")
+
+				if tc.numEvents > 0 {
+					assert.Equal(t, tc.numEvents, len(d.subscribeAppCallbackRequests))
+				} else {
+					assert.Equal(t, 1, len(d.subscribeAppCallbackRequests))
+				}
+
+				for _, req := range d.subscribeAppCallbackRequests {
+					assert.NotEmpty(t, req.Id)
+					assert.Equal(t, "memstore", req.PubsubName)
+					assert.Equal(t, "mytopic", req.Topic)
+					assert.Equal(t, "text/plain", req.DataContentType)
+					assert.Equal(t, "hello world", string(req.Data))
+					assert.Equal(t, "1.0", req.SpecVersion)
+					assert.Equal(t, "io.dapr.perf.subscribe", req.Type)
+					assert.Equal(t, "https://dapr.io", req.Source)
+				}
+
+				assert.Nil(t, d.bulkPublishRequest)
+			})
+		}
 	})
 }
