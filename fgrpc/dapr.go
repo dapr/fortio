@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/dapr/dapr/pkg/proto/common/v1"
 	dapr "github.com/dapr/dapr/pkg/proto/runtime/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -33,8 +34,9 @@ type DaprGRPCRunnerResults struct {
 	getStateRequest *dapr.GetStateRequest
 
 	// pub-sub
-	publishEventRequests []*dapr.PublishEventRequest
-	bulkPublishRequest   *dapr.BulkPublishRequest
+	publishEventRequests         []*dapr.PublishEventRequest
+	bulkPublishRequest           *dapr.BulkPublishRequest
+	subscribeAppCallbackRequests []*dapr.TopicEventRequest
 }
 
 type DaprRequestParameters struct {
@@ -73,6 +75,8 @@ func (d *DaprGRPCRunnerResults) PrepareRequestAndConnection(o *GRPCRunnerOptions
 		d.appCallbackClient = dapr.NewAppCallbackClient(conn)
 		if c == CAPABILITY_INVOKE {
 			err = d.prepareRequest4InvokeAppCallback(o)
+		} else if c == CAPABILITY_PUBSUB {
+			err = d.prepareRequest4PubSubAppCallback(o)
 		}
 	}
 
@@ -220,6 +224,64 @@ func (d *DaprGRPCRunnerResults) prepareRequest4InvokeAppCallback(o *GRPCRunnerOp
 	return nil
 }
 
+func (d *DaprGRPCRunnerResults) prepareRequest4PubSubAppCallback(o *GRPCRunnerOptions) error {
+	method := d.params.method
+	store := d.params.store
+	topic := d.params.extensions["topic"]
+	contentType := d.params.extensions["contenttype"]
+	numEvents := d.params.extensions["numevents"]
+	numEventsInt := 0
+
+	if method == "" {
+		return fmt.Errorf("method is required for appcallback pubsub load test")
+	}
+	if store == "" {
+		return fmt.Errorf("store(pubsub name) is required for appcallback pubsub load test")
+	}
+	if topic == "" {
+		return fmt.Errorf("topic is required for appcallback pubsub load test")
+	}
+
+	if numEvents == "" {
+		numEventsInt = 1
+	} else {
+		var err error
+		numEventsInt, err = strconv.Atoi(numEvents)
+		if err != nil {
+			return fmt.Errorf("numevents must be integer: found=%s", numEvents)
+		}
+	}
+
+	switch method {
+	case "subscribe":
+		d.subscribeAppCallbackRequests = make([]*dapr.TopicEventRequest, numEventsInt)
+		for i := 0; i < numEventsInt; i++ {
+			id, err := uuid.NewUUID()
+			if err != nil {
+				return fmt.Errorf("failed to generate uuid: %s", err)
+			}
+			d.subscribeAppCallbackRequests[i] = &dapr.TopicEventRequest{
+				Id:              id.String(),
+				Source:          "https://dapr.io",
+				Type:            "io.dapr.perf.subscribe",
+				PubsubName:      store,
+				Topic:           topic,
+				SpecVersion:     "1.0",
+				DataContentType: contentType,
+			}
+			if len(o.Payload) > 0 {
+				d.subscribeAppCallbackRequests[i].Data = []byte(o.Payload)
+			} else {
+				d.subscribeAppCallbackRequests[i].Data = []byte{}
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported method of appcallback pubsub load test: method=%s", method)
+	}
+
+	return nil
+}
+
 func (d *DaprGRPCRunnerResults) RunTest() error {
 	t := d.params.target
 	c := d.params.capability
@@ -254,6 +316,17 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 				}
 			case "bulkpublish":
 				_, err = d.daprClient.BulkPublishEventAlpha1(context.Background(), d.bulkPublishRequest)
+			}
+		} else if t == TARGET_APPCALLBACK {
+			switch m {
+			case "subscribe":
+				err = nil
+				for _, req := range d.subscribeAppCallbackRequests {
+					_, ierr := d.appCallbackClient.OnTopicEvent(context.Background(), req)
+					if ierr != nil {
+						err = ierr
+					}
+				}
 			}
 		}
 	}
