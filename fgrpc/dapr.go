@@ -37,6 +37,7 @@ type DaprGRPCRunnerResults struct {
 	publishEventRequests         []*dapr.PublishEventRequest
 	bulkPublishRequest           *dapr.BulkPublishRequest
 	subscribeAppCallbackRequests []*dapr.TopicEventRequest
+	// bulkSubscribeAppCallbackRequest *dapr.TopicEventBulkRequest
 }
 
 type DaprRequestParameters struct {
@@ -275,6 +276,29 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSubAppCallback(o *GRPCRunnerOp
 				d.subscribeAppCallbackRequests[i].Data = []byte{}
 			}
 		}
+	// case "bulksubscribe":
+	// 	id, err := uuid.NewUUID()
+	// 	if err != nil {
+	// 		return fmt.Errorf("failed to generate uuid: %s", err)
+	// 	}
+	// 	d.bulkSubscribeAppCallbackRequest = &dapr.TopicEventBulkRequest{
+	// 		Id:         id.String(),
+	// 		Type:       "io.dapr.perf.bulksubscribe",
+	// 		PubsubName: store,
+	// 		Topic:      topic,
+	// 	}
+	// 	d.bulkSubscribeAppCallbackRequest.Entries = make([]*dapr.TopicEventBulkRequestEntry, numEventsInt)
+	// 	for i := 0; i < numEventsInt; i++ {
+	// 		d.bulkSubscribeAppCallbackRequest.Entries[i] = &dapr.TopicEventBulkRequestEntry{
+	// 			EntryId:     strconv.Itoa(i),
+	// 			ContentType: contentType,
+	// 		}
+	// 		if len(o.Payload) > 0 {
+	// 			d.bulkSubscribeAppCallbackRequest.Entries[i].Event = []byte(o.Payload)
+	// 		} else {
+	// 			d.bulkSubscribeAppCallbackRequest.Entries[i].Event = []byte{}
+	// 		}
+	// 	}
 	default:
 		return fmt.Errorf("unsupported method of appcallback pubsub load test: method=%s", method)
 	}
