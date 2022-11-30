@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/dapr/dapr/pkg/proto/common/v1"
 	dapr "github.com/dapr/dapr/pkg/proto/runtime/v1"
+	testapp "github.com/dapr/dapr/tests/proto/pubsub_bulk_subscribe_grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -18,12 +19,15 @@ const CAPABILITY_PUBSUB = "pubsub"
 const TARGET_NOOP = "noop"
 const TARGET_DAPR = "dapr"
 const TARGET_APPCALLBACK = "appcallback"
+const METHOD_PUBSUB_PUBLISH = "publish"
+const METHOD_PUBSUB_BULK_PUBLISH = "bulkpublish"
 
 type DaprGRPCRunnerResults struct {
 	// common
 	params            *DaprRequestParameters
 	daprClient        dapr.DaprClient
 	appCallbackClient dapr.AppCallbackClient
+	appNotifyClient   testapp.PerfTestNotifierClient
 
 	// service invoke
 	invokeRequest            *dapr.InvokeServiceRequest
@@ -62,6 +66,7 @@ func (d *DaprGRPCRunnerResults) PrepareRequestAndConnection(o *GRPCRunnerOptions
 		return nil
 	} else if t == TARGET_DAPR {
 		d.daprClient = dapr.NewDaprClient(conn)
+		d.appNotifyClient = testapp.NewPerfTestNotifierClient(conn)
 		if c == CAPABILITY_INVOKE {
 			err = d.prepareRequest4Invoke(o)
 		} else if c == CAPABILITY_STATE {
@@ -158,7 +163,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	}
 
 	switch method {
-	case "publish":
+	case METHOD_PUBSUB_PUBLISH:
 		d.publishEventRequests = make([]*dapr.PublishEventRequest, numEventsInt)
 		for i := 0; i < numEventsInt; i++ {
 			d.publishEventRequests[i] = &dapr.PublishEventRequest{
@@ -175,7 +180,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 				d.publishEventRequests[i].Metadata = map[string]string{"rawPayload": rawPayload}
 			}
 		}
-	case "bulkpublish":
+	case METHOD_PUBSUB_BULK_PUBLISH:
 		d.bulkPublishRequest = &dapr.BulkPublishRequest{
 			PubsubName: store,
 			Topic:      topic,
@@ -244,7 +249,7 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 	} else if c == CAPABILITY_PUBSUB {
 		if t == TARGET_DAPR {
 			switch m {
-			case "publish":
+			case METHOD_PUBSUB_PUBLISH:
 				err = nil
 				for _, req := range d.publishEventRequests {
 					_, ierr := d.daprClient.PublishEvent(context.Background(), req)
@@ -252,7 +257,7 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 						err = ierr
 					}
 				}
-			case "bulkpublish":
+			case METHOD_PUBSUB_BULK_PUBLISH:
 				_, err = d.daprClient.BulkPublishEventAlpha1(context.Background(), d.bulkPublishRequest)
 			}
 		}
