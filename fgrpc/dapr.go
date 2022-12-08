@@ -3,9 +3,11 @@ package fgrpc
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
+	"fortio.org/fortio/log"
 	v1 "github.com/dapr/dapr/pkg/proto/common/v1"
 	dapr "github.com/dapr/dapr/pkg/proto/runtime/v1"
 	testapp "github.com/dapr/dapr/tests/proto/pubsub_bulk_subscribe_grpc"
@@ -39,6 +41,7 @@ type DaprGRPCRunnerResults struct {
 	// pub-sub
 	publishEventRequests []*dapr.PublishEventRequest
 	bulkPublishRequest   *dapr.BulkPublishRequest
+	subCompletedChan     chan struct{}
 }
 
 type DaprRequestParameters struct {
@@ -66,12 +69,12 @@ func (d *DaprGRPCRunnerResults) PrepareRequestAndConnection(o *GRPCRunnerOptions
 		return nil
 	} else if t == TARGET_DAPR {
 		d.daprClient = dapr.NewDaprClient(conn)
-		d.appNotifyClient = testapp.NewPerfTestNotifierClient(conn)
 		if c == CAPABILITY_INVOKE {
 			err = d.prepareRequest4Invoke(o)
 		} else if c == CAPABILITY_STATE {
 			err = d.prepareRequest4State(o)
 		} else if c == CAPABILITY_PUBSUB {
+			d.appNotifyClient = testapp.NewPerfTestNotifierClient(conn)
 			err = d.prepareRequest4PubSub(o)
 		}
 	} else if t == TARGET_APPCALLBACK {
@@ -139,6 +142,7 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 	topic := d.params.extensions["topic"]
 	contentType := d.params.extensions["contenttype"]
 	rawPayload := d.params.extensions["rawpayload"]
+	callback := d.params.extensions["callback"]
 	numEvents := d.params.extensions["numevents"]
 	numEventsInt := 0
 
@@ -160,6 +164,26 @@ func (d *DaprGRPCRunnerResults) prepareRequest4PubSub(o *GRPCRunnerOptions) erro
 		if err != nil {
 			return fmt.Errorf("numevents must be integer: found=%s", numEvents)
 		}
+	}
+
+	if callback == "true" {
+		d.subCompletedChan = make(chan struct{})
+		subClient, err := d.appNotifyClient.Subscribe(context.Background(), &testapp.Request{NumMessages: int32(numEventsInt)})
+		if err != nil {
+			return err
+		}
+		go func() {
+			for {
+				_, err := subClient.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					log.Fatalf("failed to receive from client: %v", err)
+				}
+				d.subCompletedChan <- struct{}{}
+			}
+		}()
 	}
 
 	switch method {
@@ -259,6 +283,10 @@ func (d *DaprGRPCRunnerResults) RunTest() error {
 				}
 			case METHOD_PUBSUB_BULK_PUBLISH:
 				_, err = d.daprClient.BulkPublishEventAlpha1(context.Background(), d.bulkPublishRequest)
+			}
+			// Wait for all messages to be processed by the subscriber
+			if d.subCompletedChan != nil {
+				<-d.subCompletedChan
 			}
 		}
 	}
